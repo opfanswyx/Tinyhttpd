@@ -485,7 +485,7 @@ void unimplemented(int client)
 }
 
 /**********************************************************************/
-
+//开始
 int main(void)
 {
     int server_sock = -1;
