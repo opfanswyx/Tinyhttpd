@@ -424,25 +424,64 @@ void serve_file(int client, const char *filename)
  * port and modify the original port variable to reflect the actual
  * port.
  * Parameters: pointer to variable containing the port to connect on
- * Returns: the socket */
+ * Returns: the socket 
+ * 此函数启动在指定端口上侦听Web连接的过程。
+ * 如果端口为0，则动态分配端口并修改原始端口变量以反映实际端口。
+ * 参数：指向包含连接端口的变量的指针
+ * 返回：套接字
+ * */
 /**********************************************************************/
 int startup(u_short *port)
 {
     int httpd = 0;
     int on = 1;
     struct sockaddr_in name;
-
+    /**********************************
+     * socket系统调用创建一个套接字
+     * 返回：一个文件描述符，该描述符可以用来访问该套接字
+     * int socket(int domain, int type, int protocol);
+     * domain指定协议族，最常用的是AF_UNIX(unix和linux文件系统实现的本地套接字)和AF_INET(UNIX网络套接字)
+     * type指定套接字的通信类型，SOCK_STREAM(有序，可靠，面向连接的双向字节流)和SOCK_DGRAM(数据报服务)
+     * protocol指定使用的协议，一般由套接字类型和套接字域来决定，一般默认0 
+     * *******************************/
     httpd = socket(PF_INET, SOCK_STREAM, 0);
     if (httpd == -1)
         error_die("socket");
-    memset(&name, 0, sizeof(name));
+    memset(&name, 0, sizeof(name)); //结构体清空置零
     name.sin_family = AF_INET;
+    //host to network, short 短整数从主机字节序到网络字节序转换
     name.sin_port = htons(*port);
-    name.sin_addr.s_addr = htonl(INADDR_ANY);
+    /********************************
+     * INADDR_ANY转换过来就是0.0.0.0，泛指本机的意思，也就是表示本机的所有IP
+     * 因为有些机子不止一块网卡，多网卡的情况下，这个就表示所有网卡ip地址的意思。
+     * 
+     * 比如一台电脑有3块网卡，分别连接三个网络，那么这台电脑就有3个ip地址了，如果某个应用程序需要监听某个端口，那他要监听哪个网卡地址的端口呢？
+     * 
+     * 如果绑定某个具体的ip地址，你只能监听你所设置的ip地址所在的网卡的端口，其它两块网卡无法监听端口，
+     * 如果我需要三个网卡都监听，那就需要绑定3个ip，也就等于需要管理3个套接字进行数据交换，这样岂不是很繁琐？
+     * 
+     * 所以出现INADDR_ANY，你只需绑定INADDR_ANY，管理一个套接字就行，不管数据是从哪个网卡过来的，只要是绑定的端口号过来的数据，都可以接收到。
+     * ******************************/
+    name.sin_addr.s_addr = htonl(INADDR_ANY);   //host to network, long
+    /******************************************
+     * 套接字选项？？？？SO_REUSEADDR？？？？需要更多的研究，可写blog
+     * int setsockopt(int socket, int level, int option_name,
+     *      const void *option_value, size_t option_len);
+     * 如果在套接字级别设置选项，level参数设置为SOL_SOCKET
+     * option_name参数指定要设置的选项，SO_REUSEADDR:防止服务器在发生意外时，端口未被释放，可以重新使用
+     * option_value参数的长度为option_len字节，用于设定选项的新值，它被传递给底层协议的处理函数，并且不能被修改
+     * 成功返回0，失败返回-1
+     * ****************************************/
     if ((setsockopt(httpd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on))) < 0)  
     {  
         error_die("setsockopt failed");
     }
+    /******************************************
+     * 命名套接字，AF_UNIX套接字会关联到一个文件系统的路径名，
+     * int bind(int socket, const struct sockaddr *address, size_t address_len);
+     * 
+     * 
+     * ***************************************/
     if (bind(httpd, (struct sockaddr *)&name, sizeof(name)) < 0)
         error_die("bind");
     if (*port == 0)  /* if dynamically allocating a port */
@@ -485,16 +524,38 @@ void unimplemented(int client)
 }
 
 /**********************************************************************/
-//开始
+//开始源码阅读之路
 int main(void)
 {
     int server_sock = -1;
-    u_short port = 4000;
+    u_short port = 4000;    //unsigned short类型
     int client_sock = -1;
+    /****************************
+     * struct sockaddr_in{
+     *  short int           sin_family; //AF_INET
+     *  unsigned short int  sin_port;   //Port_number
+     *  struct in_addr      sin_addr;   //Internet address
+     * };
+     *  struct in_addr{
+     *      unsigned long int s_addr;
+     * };
+     * **************************/
     struct sockaddr_in client_name;
-    socklen_t  client_name_len = sizeof(client_name);
+    /****************************
+     * 猜测typedef int socklen_t 
+     * /usr/include/arpa/inet.h
+     * #ifndef __socklen_t_defined
+     * typedef __socklen_t socklen_t;  
+     * # define __socklen_t_defined
+     * #endif
+     * **************************/
+    socklen_t  client_name_len = sizeof(client_name); 
     pthread_t newthread;
 
+    /***************
+     *  startup: 初始化 httpd 服务
+     * 包括建立套接字，绑定端口，进行监听等。
+     * *************/
     server_sock = startup(&port);
     printf("httpd running on port %d\n", port);
 
