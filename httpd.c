@@ -187,23 +187,32 @@ void accept_request(void *arg)
         //假如访问的网页不存在，则不断的读取剩下的请求头信息，并丢弃即可
         while ((numchars > 0) && strcmp("\n", buf))  /* read & discard headers */
             numchars = get_line(client, buf, sizeof(buf));
-        //最后声明网页不存在
+        //最后返回网页不存在
         not_found(client);
     }
     else
     {
-        if ((st.st_mode & S_IFMT) == S_IFDIR)
+        //st_mode是用特征位来表示文件类型的
+        //S_IFMT      0170000     文件类型的位遮罩
+        //如果路径是个目录，那就将主页进行显示
+        if ((st.st_mode & S_IFMT) == S_IFDIR) //目录
             strcat(path, "/index.html");
+        //如果你的文件默认是有执行权限的，自动解析成cgi程序，如果有执行权限但是不能执行，会接受到报错信号
         if ((st.st_mode & S_IXUSR) ||
                 (st.st_mode & S_IXGRP) ||
                 (st.st_mode & S_IXOTH)    )
+                //S_IXUSR:文件所有者具可执行权限
+                //S_IXGRP:用户组具可执行权限
+                //S_IXOTH:其他用户具可读取权限 
             cgi = 1;
         if (!cgi)
+            //读取静态文件返回给请求的http客户端
             serve_file(client, path);
         else
+            //执行cgi动态解析
             execute_cgi(client, path, method, query_string);
     }
-
+    //执行完毕后，关闭socket
     close(client);
 }
 
@@ -239,6 +248,7 @@ void cat(int client, FILE *resource)
     char buf[1024];
 
     fgets(buf, sizeof(buf), resource);
+    //循环读取
     while (!feof(resource))
     {
         send(client, buf, strlen(buf), 0);
@@ -285,6 +295,7 @@ void execute_cgi(int client, const char *path,
         const char *method, const char *query_string)
 {
     char buf[1024];
+    //声明的读写管道，切莫被名称给忽悠，会给出图进行说明
     int cgi_output[2];
     int cgi_input[2];
     pid_t pid;
@@ -295,6 +306,8 @@ void execute_cgi(int client, const char *path,
     int content_length = -1;
 
     buf[0] = 'A'; buf[1] = '\0';
+    //如果是GET请求
+    //读取并且丢弃头信息
     if (strcasecmp(method, "GET") == 0)
         while ((numchars > 0) && strcmp("\n", buf))  /* read & discard headers */
             numchars = get_line(client, buf, sizeof(buf));
@@ -303,13 +316,15 @@ void execute_cgi(int client, const char *path,
         numchars = get_line(client, buf, sizeof(buf));
         while ((numchars > 0) && strcmp("\n", buf))
         {
+            //循环读取头信息找到Content-Length字段的值
+            //"Content-Length: 15"
             buf[15] = '\0';
             if (strcasecmp(buf, "Content-Length:") == 0)
                 content_length = atoi(&(buf[16]));
             numchars = get_line(client, buf, sizeof(buf));
         }
         if (content_length == -1) {
-            bad_request(client);
+            bad_request(client);    //错误请求
             return;
         }
     }
@@ -331,8 +346,11 @@ void execute_cgi(int client, const char *path,
         cannot_execute(client);
         return;
     }
+
+    //返回正确响应码200
     sprintf(buf, "HTTP/1.0 200 OK\r\n");
     send(client, buf, strlen(buf), 0);
+    
     if (pid == 0)  /* child: CGI script */
     {
         char meth_env[255];
