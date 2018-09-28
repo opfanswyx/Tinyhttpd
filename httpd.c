@@ -49,11 +49,16 @@ void unimplemented(int);
 
 /**********************************************************************/
 /* A request has caused a call to accept() on the server port to
- * return.  Process the request appropriately.
- * Parameters: the socket connected to the client */
+ * return.  
+ * Process the request appropriately.
+ * Parameters: the socket connected to the client 
+ * 
+ * 参数：连接到客户端的套接字
+ * */
 /**********************************************************************/
 void accept_request(void *arg)
 {
+    //intptr_t在不同的平台是不一样的，始终与地址位数相同
     int client = (intptr_t)arg;
     char buf[1024];
     size_t numchars;
@@ -61,7 +66,7 @@ void accept_request(void *arg)
     char url[255];
     char path[512];
     size_t i, j;
-    struct stat st;
+    struct stat st; //文件结构体，用于获取文件shux
     int cgi = 0;      /* becomes true if server decides this is a CGI
                        * program */
     char *query_string = NULL;
@@ -477,20 +482,29 @@ int startup(u_short *port)
         error_die("setsockopt failed");
     }
     /******************************************
-     * 命名套接字，AF_UNIX套接字会关联到一个文件系统的路径名，
+     * 命名套接字，AF_UNIX套接字会关联到一个文件系统的路径名，AF_INET套接字关联到一个IP端口号
      * int bind(int socket, const struct sockaddr *address, size_t address_len);
-     * 
-     * 
+     * 成功返回0，失败返回-1
      * ***************************************/
     if (bind(httpd, (struct sockaddr *)&name, sizeof(name)) < 0)
         error_die("bind");
-    if (*port == 0)  /* if dynamically allocating a port */
+    if (*port == 0)  /* if dynamically allocating a port 如果动态分配端口号*/
     {
         socklen_t namelen = sizeof(name);
+        /*****************************************
+         * ?????????不明白？？？？？？？？？？？
+         * int PASCAL FAR getsockname( SOCKET s, struct sockaddr FAR* name, int FAR* namelen);
+         * s：标识一个已捆绑套接口的描述字。
+         * name：接收套接口的地址（名字）。
+         * namelen：名字缓冲区长度。
+         * ***************************************/
         if (getsockname(httpd, (struct sockaddr *)&name, &namelen) == -1)
             error_die("getsockname");
         *port = ntohs(name.sin_port);
     }
+    /****************************************
+     * 套接字队列
+     * *************************************/
     if (listen(httpd, 5) < 0)
         error_die("listen");
     return(httpd);
@@ -561,12 +575,21 @@ int main(void)
 
     while (1)
     {
+        /*****************************************
+         * int accept(int socket, struct sockaddr *address, size_t *address_len);
+         * 当有连接时，accept函数返回一个新的套接字文件描述符。发送错误时，返回-1。
+         * 
+         * ***************************************/
         client_sock = accept(server_sock,
                 (struct sockaddr *)&client_name,
                 &client_name_len);
         if (client_sock == -1)
             error_die("accept");
         /* accept_request(&client_sock); */
+        /***************************************
+         * int pthread_create(pthread_t *thread, pthread_attr_t *attr, void *(*start_routine)(void*), void *arg);
+         * 
+         * *************************************/
         if (pthread_create(&newthread , NULL, (void *)accept_request, (void *)(intptr_t)client_sock) != 0)
             perror("pthread_create");
     }
