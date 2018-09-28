@@ -27,6 +27,11 @@
 #include <stdlib.h>
 #include <stdint.h>
 
+/*****************************
+ * 检查参数c是否为空格字符
+ * 也就是判断是否为空格('')、定位字符('')、CR('')、换行('')、垂直定位字符('')、或翻页('')的情况。
+ * 参数为空白字符返回非0，否则返回0。
+ * ***************************/
 #define ISspace(x) isspace((int)(x))
 
 #define SERVER_STRING "Server: jdbhttpd/0.1.0\r\n"
@@ -46,6 +51,37 @@ void not_found(int);
 void serve_file(int, const char *);
 int startup(u_short *);
 void unimplemented(int);
+
+// Http请求，后续主要是处理这个头
+//
+// GET / HTTP/1.1
+// Host: 192.168.0.23:47310
+// Connection: keep-alive
+// Upgrade-Insecure-Requests: 1
+// User-Agent: Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/55.0.2883.87 Safari/537.36
+// Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*; q = 0.8
+// Accept - Encoding: gzip, deflate, sdch
+// Accept - Language : zh - CN, zh; q = 0.8
+// Cookie: __guid = 179317988.1576506943281708800.1510107225903.8862; monitor_count = 5
+// 
+
+// POST / color1.cgi HTTP / 1.1
+// Host: 192.168.0.23 : 47310
+// Connection : keep - alive
+// Content - Length : 10
+// Cache - Control : max - age = 0
+// Origin : http ://192.168.0.23:40786
+// Upgrade - Insecure - Requests : 1
+// User - Agent : Mozilla / 5.0 (Windows NT 6.1; WOW64) AppleWebKit / 537.36 (KHTML, like Gecko) Chrome / 55.0.2883.87 Safari / 537.36
+// Content - Type : application / x - www - form - urlencoded
+// Accept : text / html, application / xhtml + xml, application / xml; q = 0.9, image / webp, */*;q=0.8
+// Referer: http://192.168.0.23:47310/
+// Accept-Encoding: gzip, deflate
+// Accept-Language: zh-CN,zh;q=0.8
+// Cookie: __guid=179317988.1576506943281708800.1510107225903.8862; monitor_count=281
+// Form Data
+// color=gray
+
 
 /**********************************************************************/
 /* A request has caused a call to accept() on the server port to
@@ -71,8 +107,18 @@ void accept_request(void *arg)
                        * program */
     char *query_string = NULL;
 
+    /****************************
+     * 接收数据放入buff缓冲区
+     * 返回字节数
+     * **************************/
     numchars = get_line(client, buf, sizeof(buf));
     i = 0; j = 0;
+
+    /************************************
+     * 举例:"GET / HTTP/1.1\n"
+     * 提取字符串GET
+     * ISspace参数为空白字符返回非0，否则返回0。
+     * **********************************/
     while (!ISspace(buf[i]) && (i < sizeof(method) - 1))
     {
         method[i] = buf[i];
@@ -80,9 +126,10 @@ void accept_request(void *arg)
     }
     j=i;
     method[i] = '\0';
-
+ 
     if (strcasecmp(method, "GET") && strcasecmp(method, "POST"))
     {
+        //如果接收到的数据中既有GET方法与POST方法，则向客户端返回该web方法尚未实现
         unimplemented(client);
         return;
     }
@@ -91,7 +138,7 @@ void accept_request(void *arg)
         cgi = 1;
 
     i = 0;
-    while (ISspace(buf[j]) && (j < numchars))
+    while (ISspace(buf[j]) && (j < numchars))   //如果为空白字符则跳过
         j++;
     while (!ISspace(buf[j]) && (i < sizeof(url) - 1) && (j < numchars))
     {
@@ -511,8 +558,7 @@ int startup(u_short *port)
 }
 
 /**********************************************************************/
-/* Inform the client that the requested web method has not been
- * implemented.
+/* Inform the client that the requested web method has not been implemented.
  * Parameter: the client socket */
 /**********************************************************************/
 void unimplemented(int client)
