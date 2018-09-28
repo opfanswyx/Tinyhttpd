@@ -140,6 +140,12 @@ void accept_request(void *arg)
     i = 0;
     while (ISspace(buf[j]) && (j < numchars))   //如果为空白字符则跳过
         j++;
+    /*********************************
+     * //得到 "/"   
+     * 注意：如果你的http的网址为http://x.x.x.x:8888/index.html 
+     * 那么你得到的第一条http信息为GET /index.html HTTP/1.1，那么 
+     * 解析得到的就是/index.html 
+     * ********************************/
     while (!ISspace(buf[j]) && (i < sizeof(url) - 1) && (j < numchars))
     {
         url[i] = buf[j];
@@ -147,25 +153,41 @@ void accept_request(void *arg)
     }
     url[i] = '\0';
 
+    /***************************************
+     * 函数说明：strcasecmp()用来比较参数s1 和s2 字符串，比较时会自动忽略大小写的差异。
+     * 返回值：若参数s1 和s2 字符串相同则返回0。s1 长度大于s2 长度则返回大于0 的值，s1 长度若小于s2 长度则返回小于0 的值。
+     * ************************************/
     if (strcasecmp(method, "GET") == 0)
     {
         query_string = url;
+        //如果是GET请求，url可能会带有?,有查询参数
         while ((*query_string != '?') && (*query_string != '\0'))
             query_string++;
         if (*query_string == '?')
         {
             cgi = 1;
+            //将解析参数截取下来
             *query_string = '\0';
             query_string++;
         }
     }
 
+    //url中的路径格式化到path
     sprintf(path, "htdocs%s", url);
+    //如果path只是一个目录，默认设置为首页index.html
     if (path[strlen(path) - 1] == '/')
         strcat(path, "index.html");
+
+    /**************************************
+     * 函数定义: int stat(const char *file_name, struct stat *buf);
+     * 函数说明: 通过文件名filename获取文件信息，并保存在buf所指的结构体stat中
+     * 返回值: 执行成功则返回0，失败返回-1，错误代码存于errno（需要include <errno.h>）
+     * ***********************************/
     if (stat(path, &st) == -1) {
+        //假如访问的网页不存在，则不断的读取剩下的请求头信息，并丢弃即可
         while ((numchars > 0) && strcmp("\n", buf))  /* read & discard headers */
             numchars = get_line(client, buf, sizeof(buf));
+        //最后声明网页不存在
         not_found(client);
     }
     else
