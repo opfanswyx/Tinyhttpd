@@ -29,12 +29,12 @@
 
 /*****************************
  * 检查参数c是否为空格字符
- * 也就是判断是否为空格('')、定位字符('')、CR('')、换行('')、垂直定位字符('')、或翻页('')的情况。
+ * 也就是判断是否为空格('')、定位字符('\t')、CR('\r')、换行('\n')、垂直定位字符('\v')、或翻页('\f')的情况。
  * 参数为空白字符返回非0，否则返回0。
  * ***************************/
 #define ISspace(x) isspace((int)(x))
 
-#define SERVER_STRING "Server: jdbhttpd/0.1.0\r\n"
+#define SERVER_STRING "Server: jdbhttpd/0.1.0\r\n" //定义server名称
 #define STDIN   0
 #define STDOUT  1
 #define STDERR  2
@@ -126,7 +126,12 @@ void accept_request(void *arg)
     }
     j=i;
     method[i] = '\0';
- 
+    /************************************
+     * 函数说明：strcasecmp()用来比较参数s1 和s2 字符串，比较时会自动忽略大小写的差异。
+     * 返回值：若参数s1 和s2 字符串相同则返回0。
+     *        s1 长度大于s2 长度则返回大于0 的值，
+     *        s1 长度若小于s2 长度则返回小于0 的值。
+     * *********************************/
     if (strcasecmp(method, "GET") && strcasecmp(method, "POST"))
     {
         //如果接收到的数据中既有GET方法与POST方法，则向客户端返回该web方法尚未实现
@@ -135,7 +140,7 @@ void accept_request(void *arg)
     }
 
     if (strcasecmp(method, "POST") == 0)
-        cgi = 1;
+        cgi = 1;    //cgi为标志位，置1说明开启cgi解析
 
     i = 0;
     while (ISspace(buf[j]) && (j < numchars))   //如果为空白字符则跳过
@@ -153,10 +158,6 @@ void accept_request(void *arg)
     }
     url[i] = '\0';
 
-    /***************************************
-     * 函数说明：strcasecmp()用来比较参数s1 和s2 字符串，比较时会自动忽略大小写的差异。
-     * 返回值：若参数s1 和s2 字符串相同则返回0。s1 长度大于s2 长度则返回大于0 的值，s1 长度若小于s2 长度则返回小于0 的值。
-     * ************************************/
     if (strcasecmp(method, "GET") == 0)
     {
         query_string = url;
@@ -291,11 +292,12 @@ void error_die(const char *sc)
  * Parameters: client socket descriptor
  *             path to the CGI script */
 /**********************************************************************/
+//执行cgi动态解析
 void execute_cgi(int client, const char *path,
         const char *method, const char *query_string)
 {
     char buf[1024];
-    //声明的读写管道，切莫被名称给忽悠，会给出图进行说明
+    //读写管道的声明
     int cgi_output[2];
     int cgi_input[2];
     pid_t pid;
@@ -331,8 +333,14 @@ void execute_cgi(int client, const char *path,
     else/*HEAD or other*/
     {
     }
-
-
+    /****************************************
+     * #include<unistd.h>
+     * int pipe(int filedes[2]);
+     * 返回值：成功，返回0，否则返回-1。参数数组包含pipe使用的两个文件的描述符。fd[0]:读管道，fd[1]:写管道。
+     * 必须在fork()中调用pipe()，否则子进程不会继承文件描述符。
+     * 两个进程不共享祖先进程，就不能使用pipe。但是可以使用命名管道。
+     * pipe(cgi_output)执行成功后，cgi_output[0]:读通道 cgi_output[1]:写通道
+     * **************************************/
     if (pipe(cgi_output) < 0) {
         cannot_execute(client);
         return;
@@ -357,9 +365,14 @@ void execute_cgi(int client, const char *path,
         char query_env[255];
         char length_env[255];
 
+        //1代表着stdout，0代表着stdin，将系统标准输出重定向为cgi_output[1]
         dup2(cgi_output[1], STDOUT);
+        //将系统标准输入重定向为cgi_input[0]，这一点非常关键，
+        //cgi程序中用的是标准输入输出进行交互
         dup2(cgi_input[0], STDIN);
+        //关闭了cgi_output中的读通道
         close(cgi_output[0]);
+        //关闭了cgi_input中的写通道
         close(cgi_input[1]);
         sprintf(meth_env, "REQUEST_METHOD=%s", method);
         putenv(meth_env);
@@ -371,10 +384,21 @@ void execute_cgi(int client, const char *path,
             sprintf(length_env, "CONTENT_LENGTH=%d", content_length);
             putenv(length_env);
         }
+        /**************************************************
+         * 表头文件#include<unistd.h>
+         * 定义函数
+         * int execl(const char * path,const char * arg,....);
+         * 函数说明
+         * execl()用来执行参数path字符串所代表的文件路径，接下来的参数代表执行该文件时传递过去的argv(0)、argv[1]……，最后一个参数必须用空指针(NULL)作结束。
+         * 返回值
+         * 如果执行成功则函数不会返回，执行失败则直接返回-1，失败原因存于errno中。 
+         * ***********************************************/
         execl(path, NULL);
         exit(0);
     } else {    /* parent */
+        //关闭了cgi_output中的写通道，注意这是父进程中cgi_output变量和子进程要区分开
         close(cgi_output[1]);
+        //关闭了cgi_input中的读通道
         close(cgi_input[0]);
         if (strcasecmp(method, "POST") == 0)
             for (i = 0; i < content_length; i++) {
@@ -386,6 +410,17 @@ void execute_cgi(int client, const char *path,
 
         close(cgi_output[0]);
         close(cgi_input[1]);
+        /***************************************
+         * 定义函数：pid_t waitpid(pid_t pid, int * status, int options);
+         * 函数说明：waitpid()会暂时停止目前进程的执行, 直到有信号来到或子进程结束.
+         * 如果在调用wait()时子进程已经结束, 则wait()会立即返回子进程结束状态值. 子进程的结束状态值会由参数status 返回,
+         * 而子进程的进程识别码也会一快返回.
+         * 如果不在意结束状态值, 则参数status 可以设成NULL. 参数pid 为欲等待的子进程识别码, 其他数值意义如下：
+         * 1、pid<-1 等待进程组识别码为pid 绝对值的任何子进程.
+         * 2、pid=-1 等待任何子进程, 相当于wait().
+         * 3、pid=0 等待进程组识别码与目前进程相同的任何子进程.
+         * 4、pid>0 等待任何子进程识别码为pid 的子进程.
+         * ************************************/
         waitpid(pid, &status, 0);
     }
 }
@@ -664,7 +699,6 @@ int main(void)
         /*****************************************
          * int accept(int socket, struct sockaddr *address, size_t *address_len);
          * 当有连接时，accept函数返回一个新的套接字文件描述符。发送错误时，返回-1。
-         * 
          * ***************************************/
         client_sock = accept(server_sock,
                 (struct sockaddr *)&client_name,
